@@ -1,3 +1,4 @@
 /.ipynb_checkpoints
-Image_Video_Analysisi/wine.csv
-Image_Video_Analysisi/pytorch_basics/wine.csv
+wine.csv
+Image_Video_Analysis/pytorch_basics/data
+Image_Video_Analysis/pytorch_basics/.ipynb_checkpoints
