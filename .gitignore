@@ -3,3 +3,6 @@ wine.csv
 Image_Video_Analysis/pytorch_basics/data
 Image_Video_Analysis/pytorch_basics/runs
 Image_Video_Analysis/pytorch_basics/.ipynb_checkpoints
+.DS_Store
+mail.md
+Image_Video_Analysis/image_processing/img.jpg
