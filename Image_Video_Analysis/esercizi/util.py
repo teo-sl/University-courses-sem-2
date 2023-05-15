@@ -2,6 +2,7 @@ import numpy as np
 import cv2
 import matplotlib.pyplot as plt
 from scipy import ndimage
+import torch.nn as nn
 
 """
 To enhance dimensionality => ndimage.zoom(img,X)
@@ -19,8 +20,11 @@ https://computergraphics.stackexchange.com/questions/256/is-doing-multiple-gauss
 https://math.stackexchange.com/questions/3159846/what-is-the-resulting-sigma-after-applying-successive-gaussian-blur
 
 
-batch norm e local response normalization
+batch norm e local response normalization:
+- LRN is a non-trainable layer
+
 """
+
 # corrisponde a fx
 sobelH = np.array([
     [1,0,-1],
@@ -133,6 +137,9 @@ def draw_bbox(img,A,color=125,width=1):
 
 
 def compute_iou(A,B):
+    """
+    A and B are bbox coordinates in the standard form [x_min,y_min,x_max,y_max]
+    """
     
     x1 = max(A[0],B[0])
     x2 = min(A[2],B[2])
@@ -156,7 +163,7 @@ def compute_out_dim_conv2d(in_dim,kernel,padding,stride,dilation):
 
 def draw_ancor_boxes(img,point,sizes,ratios):
     """
-    point is the starting point of the anchors
+    'point' is the central point of the anchors
     """
     img = img.copy()
     x,y = point
@@ -218,7 +225,7 @@ def binarize(img,theta):
 
 def show_interpolation(img,bbox):
     """
-    the bbox is the bbox of the analysis' target in the standard fomr [x_min,y_min,x_max,y_max]
+    'bbox' is the bbox of the analysis' target in the standard fomr [x_min,y_min,x_max,y_max]
     """
     fig = plt.figure(figsize=(30, 30))
     s_x = bbox[0]
@@ -270,7 +277,7 @@ def image_histogram_equalization(image, number_bins=256):
 
 def correlation_example(img,bbox,p=0):
     """
-    bbox is the bbox of the filter, high pixel in the 
+    'bbox' is the bbox of the filter, high pixel in the 
     result is related to matching parts of the original 
     image
     """
@@ -380,7 +387,7 @@ def canny(img,low_thresh,high_tresh,sigma):
     img = histeresis(img)
     return img
 
-# to fix a little
+# need a little fix
 def apply_hough_lines(path,num_rhos,num_show,low_thresh,high_tresh,sigma):
     img = read_image_rbg(path).astype(np.uint8)
     img_gray = read_gray_img(path).astype(np.uint8)
@@ -514,3 +521,45 @@ def dilation_example():
     plt.title("Dilation")
     plt.colorbar()
     plt.show()
+
+
+# local response normalization
+class LRN(nn.Module):
+    def __init__(self, local_size=1, alpha=1.0, beta=0.75, ACROSS_CHANNELS=False):
+        """
+        Sono possibili due approcci, inter e intra channel.
+
+        Inter channel: the normalization is done in the depth dimension (across the different feature maps):
+
+        .. math::
+            b_{x,y}^i = \frac{a_{x,y}^i}{k+\alpha \sum_{j=\max(0,1-n/2)}^{\min(N-1,i+n/2)} (a_{x,y}^j)^2}
+
+        La j varia trai vari canali, mentre la posizione x,y rimane invariata.
+
+        Intra channel: lo spostamnent non è lungo i canali ma nello stesso canale sulle posizioni vicine (rispetto a x,y)
+        """
+        super(LRN, self).__init__()
+        self.ACROSS_CHANNELS = ACROSS_CHANNELS
+        if self.ACROSS_CHANNELS:
+            self.average=nn.AvgPool3d(kernel_size=(local_size, 1, 1), 
+                    stride=1,
+                    padding=(int((local_size-1.0)/2), 0, 0)) 
+        else:
+            self.average=nn.AvgPool2d(kernel_size=local_size,
+                    stride=1,
+                    padding=int((local_size-1.0)/2))
+        self.alpha = alpha
+        self.beta = beta
+    
+    
+    def forward(self, x):
+        if self.ACROSS_CHANNELS:
+            div = x.pow(2).unsqueeze(1)
+            div = self.average(div).squeeze(1)
+            div = div.mul(self.alpha).add(1.0).pow(self.beta)
+        else:
+            div = x.pow(2)
+            div = self.average(div)
+            div = div.mul(self.alpha).add(1.0).pow(self.beta)
+        x = x.div(div)
+        return x
