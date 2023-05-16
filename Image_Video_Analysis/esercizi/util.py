@@ -563,3 +563,31 @@ class LRN(nn.Module):
             div = div.mul(self.alpha).add(1.0).pow(self.beta)
         x = x.div(div)
         return x
+    
+
+
+def thresholding_morph(img,theta,low=0,high=1):
+    img = img.copy()
+    img[img<theta] = low
+    img[img>=theta] = high
+    return img
+
+
+# probable bug
+def morphologic_thresholding(img,filter,mode,S):
+    p = filter.shape[0]//2
+    C = convolution(img,filter,p=p)
+    m,n = C.shape
+    C = C[p:m-p,p:n-p]
+    if mode == 'erosion':
+        return thresholding_morph(C,S)
+    elif mode == 'dilation':
+        return thresholding_morph(C,1)
+    elif mode == 'opening':
+        D = thresholding_morph(C,S)
+        return morphologic_thresholding(D,filter,'dilation',S)
+    elif mode == 'closing':
+        D = thresholding(C,1)
+        return morphologic_thresholding(D,filter,'erosion',S-1)
+    else:
+        raise Exception('mode not supported')
