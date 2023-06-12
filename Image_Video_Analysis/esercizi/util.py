@@ -180,6 +180,9 @@ def get_mean_filter(k):
 
 
 def get_contrast(img):
+    # be sure that the image is in the range [0,1], divide only if the image is in [0,255]
+    if np.max(img)>1:
+        img = img/255.0
     return np.max(img*255) - np.min(img*255)
 
 
@@ -274,6 +277,30 @@ def image_histogram_equalization(image, number_bins=256):
         image_equalized[:,:,i] = channel_equalized
 
     return image_equalized
+
+def my_equalization_gray(img):
+    assert img.dtype == np.uint8
+    m,n = img.shape[0],img.shape[1]
+    if len(img.shape)!=2:
+        assert img.shape[2]==1
+        img = img.reshape(m,n)
+
+    cumulative = np.cumsum(np.histogram(img.reshape(-1),bins=256)[0])/(m*n)
+    img_ret = np.zeros_like(img)
+    for i in range(m):
+        for j in range(n):
+            img_ret[i,j] = np.floor(cumulative[img[i,j]]*255)
+    return img_ret
+
+def my_equalization_rgb(img):
+    assert len(img.shape)==3
+    assert img.shape[2]==3
+    m,n = img.shape[0],img.shape[1]
+    channels = []
+    for i in range(3):
+        channels.append(my_equalization_gray(img[:,:,i]).reshape(m,n,1))
+
+    return np.concatenate(channels,axis=2)
 
 def correlation_example(img,bbox,p=0):
     """
@@ -591,3 +618,24 @@ def morphologic_thresholding(img,filter,mode,S):
         return morphologic_thresholding(D,filter,'erosion',S-1)
     else:
         raise Exception('mode not supported')
+    
+
+
+def get_sparse_kernel_matrix(K, h_X, w_X):
+    # K is the kernel matrix
+    # h_X, w_X are the height and width of the input matrix
+    # to convolve take the output, let's say W, and the image, let's say X and do:
+    # W @ X
+    # then you need to reshape the output
+    h_K, w_K = K.shape
+
+    h_Y, w_Y = h_X - h_K + 1, w_X - w_K + 1
+
+    W = np.zeros((h_Y * w_Y, h_X * w_X))
+    for i in range(h_Y):
+        for j in range(w_Y):
+            for ii in range(h_K):
+                for jj in range(w_K):
+                    W[i * w_Y + j, i * w_X + j + ii * w_X + jj] = K[ii, jj]
+
+    return W
