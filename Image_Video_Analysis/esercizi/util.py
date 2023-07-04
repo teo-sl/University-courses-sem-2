@@ -3,6 +3,7 @@ import cv2
 import matplotlib.pyplot as plt
 from scipy import ndimage
 import torch.nn as nn
+import math
 
 """
 To enhance dimensionality => ndimage.zoom(img,X)
@@ -22,7 +23,10 @@ https://math.stackexchange.com/questions/3159846/what-is-the-resulting-sigma-aft
 
 batch norm e local response normalization:
 - LRN is a non-trainable layer
+In DNNs, the purpose of this lateral inhibition is to carry out local contrast enhancement so that locally maximum pixel values are used as excitation for the next layers.
 
+
+exponential transformation: img_exp = 4*(((1+i)**img)-1)
 """
 
 # corrisponde a fx
@@ -103,7 +107,7 @@ def read_image_rbg(path):
         raise Exception('Immagine non a colori')
     return img[:,:,::-1]
 
-def applay_affine(img,A,recenter=True):
+def apply_affine(img,A,recenter=True):
     m,n = img.shape
     center  = np.array([m//2,n//2])
     new_center = A @ [*center,1]
@@ -120,6 +124,33 @@ def applay_affine(img,A,recenter=True):
             if new_pos[0]<0 or new_pos[0]>=m or new_pos[1]<0 or new_pos[1]>=n:
                 continue
             ret[new_pos[0],new_pos[1]] = img[i,j]
+    return ret
+
+def apply_affine_complete(img,theta=0,tx=0,ty=0,cx=1,cy=1,sv=0,sh=0):
+    A = np.eye(3)
+    A[0,2] = tx
+    A[1,2] = ty
+    B = np.eye(3)
+    B[0,0] = cx
+    B[1,1] = cy
+    theta = np.deg2rad(theta)
+    C = np.array([
+        [np.cos(theta),-np.sin(theta),0],
+        [np.sin(theta),np.cos(theta),0],
+        [0,0,1]
+    ]) 
+    D = np.eye(3)
+    D[0,1] = sv
+    E = np.eye(3)
+    E[1,0] = sh
+    mat = A @ B @ C @ D @ E
+    ret = np.zeros_like(img)
+    m,n = img.shape
+    for i in range(m):
+        for j in range(n):
+            [x_,y_,_] = mat @ np.array([i,j,1])
+            if x_>=0 and x_<m and y_>=0 and y_<n:
+                ret[int(x_),int(y_)] = img[i,j]
     return ret
 
 
@@ -160,6 +191,10 @@ def compute_out_dim_conv2d(in_dim,kernel,padding,stride,dilation):
         ((in_dim+2*padding-dilation*(kernel-1)-1)/stride)+1
     ))
 
+def compute_out_dim_t_conv2d(in_dim,kernel,padding,stride,dilation):
+    return int(
+        (in_dim-1)*stride-2*padding+dilation*(kernel-1)+1
+    )
 
 def draw_ancor_boxes(img,point,sizes,ratios):
     """
@@ -639,3 +674,39 @@ def get_sparse_kernel_matrix(K, h_X, w_X):
                     W[i * w_Y + j, i * w_X + j + ii * w_X + jj] = K[ii, jj]
 
     return W
+
+
+def estimate_noise(I):
+  """
+  Reference: J. Immerkær, “Fast Noise Variance Estimation”, 
+  Computer Vision and Image Understanding, 
+  Vol. 64, No. 2, pp. 300-302, Sep. 1996 
+  """
+
+  H, W = I.shape
+
+  M = [[1, -2, 1],
+       [-2, 4, -2],
+       [1, -2, 1]]
+
+  sigma = np.sum(np.sum(np.absolute(ndimage.convolve(I, M))))
+  
+  sigma = sigma * math.sqrt(0.5 * math.pi) / (6 * (W-2) * (H-2))
+
+  return sigma
+
+
+
+
+def example_harris(img_path,sigma_gauss=None):
+    img = cv2.imread(img_path)
+    if sigma_gauss is not None and sigma_gauss>0:
+        img = ndimage.gaussian_filter(img,sigma_gauss)
+    gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+    gray = np.float32(gray)
+    dst = cv2.cornerHarris(gray,2,3,0.04)
+    #result is dilated for marking the corners, not important
+    dst = cv2.dilate(dst,None)
+    # Threshold for an optimal value, it may vary depending on the image.
+    img[dst>0.01*dst.max()]=[0,0,255]
+    return img
